@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 from datetime import datetime, timedelta
 import pytz
-# import google-generativeai as genai
+import google.generativeai as genai
 from crawling import get_today_menu, get_weekly_menu
 from utils import get_current_date
 
@@ -15,8 +15,8 @@ from utils import get_current_date
 DEV_MODE = True  # 개발 중일 때만 True로 설정
 
 # Gemini API 설정
-# genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-# model = genai.GenerativeModel('gemini-pro')
+genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+model = genai.GenerativeModel('gemini-pro')
 
 # 페이지 기본 설정
 st.set_page_config(
@@ -381,11 +381,7 @@ def display_menu_section():
                 return
             
             # 메뉴 표시
-            st.markdown("### 📍 학생 식당")
-            display_menu_dataframe(student_today, "학생 식당", today_str)
-            
-            st.markdown("### 📍 교직원 식당")
-            display_menu_dataframe(staff_today, "교직원 식당", today_str)
+            display_menu(student_today, staff_today, error)
             
             # AI 추천 섹션 (로그인한 경우에만)
             if st.session_state.is_logged_in:
@@ -640,6 +636,86 @@ def display_reviews():
                 st.write(f"**{review['username']}**님의 리뷰")
                 st.write(review['review_text'])
             st.divider()
+
+# 테이블 스타일 정의
+table_style = """
+<style>
+    .menu-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 10px 0;
+        background-color: rgb(17, 17, 17);
+        color: rgb(238, 238, 238);
+    }
+    .menu-table th {
+        background-color: rgb(38, 39, 48);
+        color: rgb(238, 238, 238);
+        padding: 12px;
+        text-align: left;
+        border: 1px solid rgb(38, 39, 48);
+    }
+    .menu-table td {
+        padding: 12px;
+        border: 1px solid rgb(38, 39, 48);
+        background-color: rgb(17, 17, 17);
+    }
+    .menu-table tr:hover td {
+        background-color: rgb(38, 39, 48);
+    }
+    .section-title {
+        color: rgb(238, 238, 238);
+        margin: 20px 0 10px 0;
+        font-size: 1.2em;
+    }
+</style>
+"""
+
+def display_menu(student_menu, staff_menu, error_message):
+    """메뉴 표시"""
+    if error_message:
+        st.error(error_message)
+        return
+
+    # 스타일 적용
+    st.markdown(table_style, unsafe_allow_html=True)
+    
+    # 학생 식당 메뉴
+    st.markdown("### 🍽️ 오늘의 학식 메뉴", unsafe_allow_html=True)
+    
+    if not student_menu.empty:
+        st.markdown("#### 🎈 학생 식당", unsafe_allow_html=True)
+        
+        # 데이터프레임을 HTML 테이블로 변환
+        html_table = "<table class='menu-table'>"
+        # 헤더 추가
+        html_table += "<tr><th>날짜</th><th>구분</th><th>메뉴</th></tr>"
+        
+        # 각 행 추가
+        for _, row in student_menu.iterrows():
+            html_table += f"<tr><td>{row['날짜']}</td><td>{row['구분']}</td><td>{row['메뉴']}</td></tr>"
+        
+        html_table += "</table>"
+        st.markdown(html_table, unsafe_allow_html=True)
+    else:
+        st.info("🍽️ AI 메뉴 추천을 이용하시려면 로그인이 필요합니다.")
+    
+    # 교직원 식당 메뉴
+    if not staff_menu.empty:
+        st.markdown("#### 📍 교직원 식당", unsafe_allow_html=True)
+        
+        # 데이터프레임을 HTML 테이블로 변환
+        html_table = "<table class='menu-table'>"
+        # 헤더 추가
+        html_table += "<tr><th>날짜</th><th>구분</th><th>메뉴</th></tr>"
+        
+        # 각 행 추가
+        for _, row in staff_menu.iterrows():
+            html_table += f"<tr><td>{row['날짜']}</td><td>{row['구분']}</td><td>{row['메뉴']}</td></tr>"
+        
+        html_table += "</table>"
+        st.markdown(html_table, unsafe_allow_html=True)
+    else:
+        st.info("AI 메뉴 추천을 이용하시려면 로그인이 필요합니다.")
 
 if __name__ == "__main__":
     main()
