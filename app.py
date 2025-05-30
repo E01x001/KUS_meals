@@ -498,9 +498,9 @@ def display_menu_section():
             # 메뉴 정렬 및 포맷팅
             student_df, staff_df = align_menus_by_date(student_df, staff_df)
             
-            # 오늘의 메뉴만 필터링
-            student_today = student_df[student_df['날짜'].str.contains(today_str)]
-            staff_today = staff_df[staff_df['날짜'].str.contains(today_str)]
+            # 오늘의 메뉴만 필터링 (정확한 날짜 비교)
+            student_today = student_df[student_df['날짜'] == today_str]
+            staff_today = staff_df[staff_df['날짜'] == today_str]
             
             if student_today.empty and staff_today.empty:
                 st.info("🏖️ 오늘은 식당을 운영하지 않습니다.")
