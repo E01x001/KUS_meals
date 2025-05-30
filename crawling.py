@@ -45,6 +45,44 @@ def get_today_menu():
             student_menu = parse_menu(soup, current_date, "학생식당")
             staff_menu = parse_menu(soup, current_date, "교직원식당")
             
+            # 메뉴가 없는 경우 해당 주의 메뉴를 가져옴
+            if student_menu.empty and staff_menu.empty:
+                # 해당 주의 월요일 찾기
+                monday = current_date - timedelta(days=current_date.weekday())
+                
+                student_menus = []
+                staff_menus = []
+                
+                # 월요일부터 금요일까지의 메뉴 크롤링
+                for i in range(5):  # 0=월요일, 4=금요일
+                    date = monday + timedelta(days=i)
+                    
+                    # URL 파라미터 생성
+                    temp_date = date.strftime("%Y%m%d")
+                    search_day = date.strftime("%Y.%m.%d")
+                    
+                    # 식단 페이지 URL
+                    url = f"https://sejong.korea.ac.kr/dietMa/koreaSejong/artclView.do?siteId=koreaSejong&tempDate={temp_date}&day30=&searchDay={search_day}"
+                    
+                    # 페이지 크롤링
+                    response = session.get(url, headers=headers)
+                    
+                    if response.status_code == 200:
+                        soup = BeautifulSoup(response.text, 'html.parser')
+                        
+                        # 학생식당과 교직원식당 메뉴 파싱
+                        student_menu = parse_menu(soup, date, "학생식당")
+                        staff_menu = parse_menu(soup, date, "교직원식당")
+                        
+                        if not student_menu.empty:
+                            student_menus.append(student_menu)
+                        if not staff_menu.empty:
+                            staff_menus.append(staff_menu)
+                
+                # 메뉴 데이터 합치기
+                student_menu = pd.concat(student_menus, ignore_index=True) if student_menus else pd.DataFrame(columns=['날짜', '구분', '메뉴'])
+                staff_menu = pd.concat(staff_menus, ignore_index=True) if staff_menus else pd.DataFrame(columns=['날짜', '구분', '메뉴'])
+            
             return student_menu, staff_menu, None
             
     except Exception as e:
