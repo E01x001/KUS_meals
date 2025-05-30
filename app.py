@@ -359,7 +359,7 @@ def display_menu_section():
     if mode == "오늘의 메뉴":
         st.subheader("🍱 오늘의 학식 메뉴")
         
-        student_df, staff_df, error = get_today_menu()
+        student_df, staff_df, error = cached_get_today_menu()  # 캐시된 함수 사용
         
         if error:
             st.error(error)
@@ -430,7 +430,7 @@ def display_menu_section():
                 st.info("리뷰 작성하려면 로그인이 필요합니다.")
     else:
         st.subheader("📅 이번 주 전체 메뉴")
-        student_df, staff_df, error = get_weekly_menu()
+        student_df, staff_df, error = cached_get_weekly_menu()  # 캐시된 함수 사용
         
         if error:
             st.error(error)
@@ -517,6 +517,7 @@ def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
 
 # users.csv 파일 생성 또는 로드
+@st.cache_data(ttl=300)  # 5분 캐시
 def load_users():
     users_file = Path("users.csv")
     if not users_file.exists():
@@ -561,6 +562,7 @@ def logout():
     st.session_state.username = None
     st.session_state.user_name = None
 
+@st.cache_data(ttl=300)  # 5분 캐시
 def load_reviews():
     reviews_file = Path("reviews.csv")
     if not reviews_file.exists():
@@ -713,6 +715,15 @@ def display_menu(student_menu, staff_menu, error_message):
         st.markdown(html_table, unsafe_allow_html=True)
     else:
         st.info("AI 메뉴 추천을 이용하시려면 로그인이 필요합니다.")
+
+# 캐시 설정
+@st.cache_data(ttl=3600)  # 1시간 캐시
+def cached_get_today_menu():
+    return get_today_menu()
+
+@st.cache_data(ttl=3600)  # 1시간 캐시
+def cached_get_weekly_menu():
+    return get_weekly_menu()
 
 if __name__ == "__main__":
     main()
