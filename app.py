@@ -7,16 +7,11 @@ import json
 from pathlib import Path
 from datetime import datetime, timedelta
 import pytz
-import google.generativeai as genai
 from crawling import get_today_menu, get_weekly_menu
 from utils import get_current_date
 
 # 개발 모드 설정
 DEV_MODE = True  # 개발 중일 때만 True로 설정
-
-# Gemini API 설정
-genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-model = genai.GenerativeModel('gemini-pro')
 
 # 페이지 기본 설정
 st.set_page_config(
@@ -395,11 +390,13 @@ def display_menu_section():
                     user_prefs = display_preference_settings()
                 
                 with tab2:
-                    if user_prefs:  # 취향이 설정된 경우에만
-                        recommendation = get_menu_recommendation(student_df, user_prefs)
-                        st.markdown(recommendation)
-                    else:
-                        st.info("취향 설정 탭에서 음식 취향을 설정해주세요!")
+                    st.info("🚀 AI 메뉴 추천 기능이 곧 제공될 예정입니다!")
+                    st.markdown("""
+                    ### Coming Soon!
+                    - 사용자 취향 기반 메뉴 추천
+                    - 알레르기 정보를 고려한 안전한 추천
+                    - 영양 균형을 고려한 식단 제안
+                    """)
             else:
                 st.info("AI 메뉴 추천을 이용하시려면 로그인이 필요합니다.")
             
