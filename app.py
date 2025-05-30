@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 from datetime import datetime, timedelta
 import pytz
+import sqlite3
 from crawling import get_today_menu, get_weekly_menu
 from utils import get_current_date
 
@@ -19,6 +20,40 @@ st.set_page_config(
     page_icon="🍽️",
     layout="wide"  # 전체 화면 사용
 )
+
+# 데이터베이스 초기화
+def init_db():
+    conn = sqlite3.connect('data.db', check_same_thread=False)
+    c = conn.cursor()
+    
+    # 사용자 테이블 생성
+    c.execute('''CREATE TABLE IF NOT EXISTS users
+                 (username TEXT PRIMARY KEY, password TEXT, name TEXT)''')
+    
+    # 리뷰 테이블 생성
+    c.execute('''CREATE TABLE IF NOT EXISTS reviews
+                 (date TEXT, username TEXT, rating INTEGER, 
+                  review_text TEXT, recommended BOOLEAN)''')
+    
+    # 선호도 테이블 생성
+    c.execute('''CREATE TABLE IF NOT EXISTS preferences
+                 (username TEXT PRIMARY KEY, preferences TEXT)''')
+    
+    conn.commit()
+    return conn
+
+# 데이터베이스 연결
+if 'db_connection' not in st.session_state:
+    st.session_state.db_connection = init_db()
+
+# 캐시 설정
+@st.cache_data(ttl=3600)  # 1시간 캐시
+def cached_get_today_menu():
+    return get_today_menu()
+
+@st.cache_data(ttl=3600)  # 1시간 캐시
+def cached_get_weekly_menu():
+    return get_weekly_menu()
 
 # 현재 날짜 정보
 korea_tz = pytz.timezone('Asia/Seoul')
@@ -63,19 +98,115 @@ TASTE_PREFERENCES = {
     ]
 }
 
-def load_preferences():
-    pref_file = Path("preferences.json")
-    if not pref_file.exists():
-        return {}
-    with open(pref_file, 'r', encoding='utf-8') as f:
-        return json.load(f)
+def load_users():
+    """사용자 목록 로드"""
+    conn = st.session_state.db_connection
+    return pd.read_sql_query("SELECT * FROM users", conn)
+
+def register_user(username, password, name):
+    """사용자 등록"""
+    try:
+        conn = st.session_state.db_connection
+        c = conn.cursor()
+        
+        # 중복 사용자 확인
+        c.execute("SELECT * FROM users WHERE username = ?", (username,))
+        if c.fetchone() is not None:
+            return False, "이미 존재하는 사용자 아이디입니다."
+        
+        # 새 사용자 추가
+        c.execute("INSERT INTO users (username, password, name) VALUES (?, ?, ?)",
+                 (username, hash_password(password), name))
+        conn.commit()
+        return True, "회원가입이 완료되었습니다!"
+    except Exception as e:
+        return False, f"회원가입 중 오류가 발생했습니다: {str(e)}"
+
+def verify_login(username, password):
+    """로그인 확인"""
+    try:
+        conn = st.session_state.db_connection
+        c = conn.cursor()
+        
+        c.execute("SELECT * FROM users WHERE username = ?", (username,))
+        user = c.fetchone()
+        
+        if user is None:
+            return False, "존재하지 않는 사용자입니다."
+        
+        if user[1] == hash_password(password):  # user[1]은 password 컬럼
+            return True, user[2]  # user[2]는 name 컬럼
+        return False, "비밀번호가 일치하지 않습니다."
+    except Exception as e:
+        return False, f"로그인 중 오류가 발생했습니다: {str(e)}"
+
+def logout():
+    st.session_state.is_logged_in = False
+    st.session_state.username = None
+    st.session_state.user_name = None
+
+def get_todays_reviews():
+    """오늘의 리뷰 가져오기"""
+    conn = st.session_state.db_connection
+    current_date = get_current_date()
+    today_date = current_date.strftime("%Y-%m-%d")
+    return pd.read_sql_query(
+        "SELECT * FROM reviews WHERE date = ?",
+        conn,
+        params=(today_date,)
+    )
+
+def save_review(username, rating, review_text, recommended):
+    """리뷰 저장"""
+    try:
+        conn = st.session_state.db_connection
+        c = conn.cursor()
+        current_date = get_current_date()
+        today_date = current_date.strftime("%Y-%m-%d")
+        
+        # 같은 날짜의 기존 리뷰 삭제
+        c.execute("DELETE FROM reviews WHERE date = ? AND username = ?",
+                 (today_date, username))
+        
+        # 새 리뷰 추가
+        c.execute("""INSERT INTO reviews 
+                    (date, username, rating, review_text, recommended)
+                    VALUES (?, ?, ?, ?, ?)""",
+                 (today_date, username, rating, review_text, recommended))
+        conn.commit()
+        return True
+    except Exception as e:
+        st.error(f"리뷰 저장 중 오류가 발생했습니다: {str(e)}")
+        return False
 
 def save_preferences(username, preferences):
-    pref_file = Path("preferences.json")
-    all_prefs = load_preferences()
-    all_prefs[username] = preferences
-    with open(pref_file, 'w', encoding='utf-8') as f:
-        json.dump(all_prefs, f, ensure_ascii=False, indent=2)
+    """사용자 선호도 저장"""
+    try:
+        conn = st.session_state.db_connection
+        c = conn.cursor()
+        preferences_json = json.dumps(preferences, ensure_ascii=False)
+        
+        c.execute("INSERT OR REPLACE INTO preferences (username, preferences) VALUES (?, ?)",
+                 (username, preferences_json))
+        conn.commit()
+        return True
+    except Exception as e:
+        st.error(f"선호도 저장 중 오류가 발생했습니다: {str(e)}")
+        return False
+
+def load_preferences():
+    """모든 사용자의 선호도 로드"""
+    try:
+        conn = st.session_state.db_connection
+        c = conn.cursor()
+        preferences = {}
+        
+        for row in c.execute("SELECT * FROM preferences"):
+            preferences[row[0]] = json.loads(row[1])
+        return preferences
+    except Exception as e:
+        st.error(f"선호도 로드 중 오류가 발생했습니다: {str(e)}")
+        return {}
 
 def get_menu_recommendation(menu_df, user_preferences):
     # 메뉴 텍스트 추출
@@ -516,98 +647,6 @@ def main():
 def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
 
-# users.csv 파일 생성 또는 로드
-@st.cache_data(ttl=300)  # 5분 캐시
-def load_users():
-    users_file = Path("users.csv")
-    if not users_file.exists():
-        df = pd.DataFrame(columns=['username', 'password', 'name'])
-        df.to_csv(users_file, index=False)
-        return df
-    return pd.read_csv(users_file)
-
-# 사용자 등록 함수
-def register_user(username, password, name):
-    users_df = load_users()
-    
-    # 중복 사용자 확인
-    if username in users_df['username'].values:
-        return False, "이미 존재하는 사용자 아이디입니다."
-    
-    # 새 사용자 추가
-    new_user = pd.DataFrame({
-        'username': [username],
-        'password': [hash_password(password)],
-        'name': [name]
-    })
-    users_df = pd.concat([users_df, new_user], ignore_index=True)
-    users_df.to_csv('users.csv', index=False)
-    return True, "회원가입이 완료되었습니다!"
-
-# 로그인 확인 함수
-def verify_login(username, password):
-    users_df = load_users()
-    user = users_df[users_df['username'] == username]
-    
-    if user.empty:
-        return False, "존재하지 않는 사용자입니다."
-    
-    if user.iloc[0]['password'] == hash_password(password):
-        return True, user.iloc[0]['name']
-    return False, "비밀번호가 일치하지 않습니다."
-
-# 로그아웃 함수
-def logout():
-    st.session_state.is_logged_in = False
-    st.session_state.username = None
-    st.session_state.user_name = None
-
-@st.cache_data(ttl=300)  # 5분 캐시
-def load_reviews():
-    reviews_file = Path("reviews.csv")
-    if not reviews_file.exists():
-        df = pd.DataFrame(columns=['date', 'username', 'rating', 'review_text', 'recommended'])
-        df.to_csv(reviews_file, index=False)
-        return df
-    return pd.read_csv(reviews_file)
-
-def save_review(username, rating, review_text, recommended):
-    reviews_df = load_reviews()
-    
-    # 같은 사용자가 같은 날짜에 작성한 리뷰가 있는지 확인
-    existing_review = reviews_df[
-        (reviews_df['date'] == today_date) & 
-        (reviews_df['username'] == username)
-    ]
-    
-    if not existing_review.empty:
-        # 기존 리뷰 업데이트
-        reviews_df.loc[
-            (reviews_df['date'] == today_date) & 
-            (reviews_df['username'] == username),
-            ['rating', 'review_text', 'recommended']
-        ] = [rating, review_text, recommended]
-    else:
-        # 새 리뷰 추가
-        new_review = pd.DataFrame({
-            'date': [today_date],
-            'username': [username],
-            'rating': [rating],
-            'review_text': [review_text],
-            'recommended': [recommended]
-        })
-        reviews_df = pd.concat([reviews_df, new_review], ignore_index=True)
-    
-    reviews_df.to_csv('reviews.csv', index=False)
-    return True
-
-def get_todays_reviews():
-    """오늘의 리뷰 가져오기"""
-    reviews_df = load_reviews()
-    current_date = get_current_date()
-    today_date = current_date.strftime("%Y-%m-%d")
-    return reviews_df[reviews_df['date'] == today_date].copy()
-
 def display_reviews():
     reviews_df = get_todays_reviews()
     if reviews_df.empty:
@@ -718,15 +757,6 @@ def display_menu(student_menu, staff_menu, error_message):
         st.markdown(html_table, unsafe_allow_html=True)
     else:
         st.info("AI 메뉴 추천을 이용하시려면 로그인이 필요합니다.")
-
-# 캐시 설정
-@st.cache_data(ttl=3600)  # 1시간 캐시
-def cached_get_today_menu():
-    return get_today_menu()
-
-@st.cache_data(ttl=3600)  # 1시간 캐시
-def cached_get_weekly_menu():
-    return get_weekly_menu()
 
 if __name__ == "__main__":
     main()
