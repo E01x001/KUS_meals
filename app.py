@@ -602,7 +602,10 @@ def save_review(username, rating, review_text, recommended):
     return True
 
 def get_todays_reviews():
+    """오늘의 리뷰 가져오기"""
     reviews_df = load_reviews()
+    current_date = get_current_date()
+    today_date = current_date.strftime("%Y-%m-%d")
     return reviews_df[reviews_df['date'] == today_date].copy()
 
 def display_reviews():
